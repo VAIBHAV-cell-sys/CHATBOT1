@@ -1,0 +1,68 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+ENV/
+
+# Environment variables / secrets
+.env
+*.env
+secrets.*
+config.*
+credentials.*
+
+# Logs and databases
+*.log
+*.sqlite3
+*.db
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test and coverage files
+.coverage
+.tox/
+.nox/
+pytest_cache/
+htmlcov/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# MyPy and Pyright type checking cache
+.mypy_cache/
+.pyright/
+
+# Pylint and Bandit reports
+pylint-report.txt
+bandit-report.json
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Dist and packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Misc
+*.bak
+*.swp
+
+.bin
+# Ignore the local model file
+research/model/llama-2-7b-chat.ggmlv3.q4_0.bin
+medibot/research/model/
+medibot/research/model/
+*.bin
+*.pdf
