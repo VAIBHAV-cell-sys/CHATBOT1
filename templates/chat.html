@@ -1,173 +1,176 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Challenge Navigator</title>
-    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
-    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
-
-    <style>
-        .thinking-dots {
-            display: none;
-            text-align: center;
-            font-size: 1.1rem;
-            color: #007bff;
-            margin-top: 10px;
-        }
-
-        .thinking-dots span {
-            animation: blink 1.5s infinite;
-        }
-
-        .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-        @keyframes blink {
-            0% { opacity: 0.2; }
-            20% { opacity: 1; }
-            100% { opacity: 0.2; }
-        }
-
-        .suggestion-btn {
-            cursor: pointer;
-        }
-
-        #suggestionBox {
-            display: flex;
-            flex-wrap: wrap;
-        }
-
-        .config-box {
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin-bottom: 15px;
-            background: #f9f9f9;
-        }
-
-        .config-box h5 {
-            margin-bottom: 10px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Challenge Navigator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      padding: 40px;
+      background: #f9f9f9;
+    }
+    .container {
+      max-width: 700px;
+      margin: auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+    .form-group label {
+      font-weight: 500;
+    }
+    #responseBox {
+      white-space: pre-wrap;
+      background: #f1f1f1;
+      padding: 20px;
+      border-radius: 6px;
+      margin-top: 20px;
+    }
+    .challenge-item {
+      margin-bottom: 10px;
+    }
+  </style>
 </head>
-
 <body>
-<div class="container-fluid h-100">
-    <div class="row justify-content-center h-100">
-        <div class="col-md-8 col-xl-6 chat">
-            <div class="card">
-                <div class="card-header msg_head">
-                    <div class="d-flex bd-highlight">
-                        <div class="img_cont">
-                            <img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img">
-                            <span class="online_icon"></span>
-                        </div>
-                        <div class="user_info">
-                            <span>Challenge Navigator</span>
-                            <p>Customize your AI assistant</p>
-                        </div>
-                    </div>
-                </div>
+  <div class="container">
+    <h2 class="mb-4">🧠 Challenge Navigator</h2>
 
-                <div class="card-body msg_card_body">
-                    <!-- 🔧 LLM Selection -->
-                    <div class="config-box">
-                        <h5>Choose Your LLM</h5>
-                        <div class="form-group">
-                            <select id="llmSelector" class="form-control" disabled>
-                                <option selected>LLaMA (Local - Default)</option>
-                            </select>
-                            <small class="text-muted">Switching LLM coming soon</small>
-                        </div>
-                    </div>
-
-                    <!-- 💬 Message area -->
-                    <div id="messageFormeight"></div>
-                </div>
-
-                <div class="card-footer">
-                    <!-- Suggestions -->
-                    <div id="suggestionBox" class="mb-2"></div>
-
-                    <!-- Input Form -->
-                    <form id="messageArea" class="input-group">
-                        <input type="text" id="text" name="msg" placeholder="Describe your challenge..." autocomplete="off" class="form-control type_msg" required />
-                        <div class="input-group-append">
-                            <button type="submit" id="send" class="input-group-text send_btn">
-                                <i class="fas fa-location-arrow"></i>
-                            </button>
-                        </div>
-                    </form>
-
-                    <!-- Thinking Animation -->
-                    <div id="thinkingIndicator" class="thinking-dots">
-                        Thinking<span>.</span><span>.</span><span>.</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <!-- Model Setup -->
+    <div class="form-group">
+      <label for="llmSelector">Select LLM Provider</label>
+      <select id="llmSelector" class="form-control">
+        <option value="local_llama">Local LLaMA</option>
+        <option value="openai">OpenAI</option>
+        <option value="perplexity">Perplexity AI</option>
+        <option value="deepseek">DeepSeek AI</option>
+        <option value="aimlapi">AIMLAPI</option> <!-- ✅ FIXED: was 'deepseek' before -->
+      </select>
     </div>
-</div>
 
-<script>
-$(document).ready(function () {
-    // ✅ Suggestion Logic
-    $("#text").on("input", function () {
-        const input = $(this).val();
-        if (input.length < 3) {
-            $("#suggestionBox").empty();
-            return;
-        }
+    <div class="form-group">
+      <label for="apiKey">API Key (if needed)</label>
+      <input type="password" class="form-control" id="apiKey" placeholder="Enter API key if required">
+    </div>
 
-        $.post("/suggest", { msg: input }, function (data) {
-            const suggestions = data.suggestions || [];
-            const html = suggestions.map(s =>
-                `<button type="button" class="btn btn-sm btn-outline-secondary m-1 suggestion-btn">${s}</button>`
-            ).join("");
-            $("#suggestionBox").html(html);
-        });
-    });
+    <button class="btn btn-secondary mb-4" onclick="setModel()">Set Model</button>
 
-    // ✅ Use Suggestion
-    $(document).on("click", ".suggestion-btn", function () {
-        $("#text").val($(this).text()).focus();
-    });
+    <!-- Goal Input -->
+    <div class="form-group">
+      <label for="goalInput">🎯 What’s your goal?</label>
+      <input type="text" class="form-control" id="goalInput" placeholder="e.g., Start a YouTube Channel">
+    </div>
+    <button class="btn btn-primary mb-3" onclick="generateChallenges()">Generate Challenges</button>
 
-    // ✅ Submit User Message
-    $("#messageArea").on("submit", async function (e) {
-        e.preventDefault();
-        const userText = $("#text").val();
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    <!-- Challenges -->
+    <div id="challengeSection" style="display:none;">
+      <h5>🛠️ Select up to 5 challenges:</h5>
+      <div id="challengeList" class="mb-3"></div>
+      <button class="btn btn-success" onclick="generatePlan()">Generate Action Plan</button>
+    </div>
 
-        const userHtml = `
-            <div class="d-flex justify-content-end mb-4">
-                <div class="msg_cotainer_send">${userText}<span class="msg_time_send">${time}</span></div>
-                <div class="img_cont_msg"><img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg"></div>
-            </div>`;
-        $("#messageFormeight").append(userHtml);
-        $("#text").val("");
-        $("#thinkingIndicator").show();
+    <!-- Plan Output -->
+    <div id="responseBox" style="display:none;" class="mt-4"></div>
+  </div>
 
-        const res = await fetch("/get", {
-            method: "POST",
-            body: new URLSearchParams({ msg: userText })
-        });
+  <script>
+    async function setModel() {
+      const llm = document.getElementById("llmSelector").value;
+      const apiKey = document.getElementById("apiKey").value;
 
-        const data = await res.json();
-        const reply = data.answer || "[No answer]";
+      await fetch("/set_model", {
+        method: "POST",
+        body: new URLSearchParams({ model: llm, api_key: apiKey }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      });
 
-        const botHtml = `
-            <div class="d-flex justify-content-start mb-4">
-                <div class="img_cont_msg"><img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg"></div>
-                <div class="msg_cotainer">${reply}<span class="msg_time">${time}</span></div>
-            </div>`;
+      alert("✅ Model set successfully!");
+    }
 
-        $("#messageFormeight").append($.parseHTML(botHtml));
-        $("#thinkingIndicator").hide();
-        $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight);
-    });
-});
-</script>
+    async function generateChallenges() {
+      const goal = document.getElementById("goalInput").value.trim();
+      const challengeList = document.getElementById("challengeList");
+      const responseBox = document.getElementById("responseBox");
+
+      if (!goal) return alert("❗ Please enter a goal.");
+
+      responseBox.style.display = "block";
+      responseBox.innerText = "Generating challenges... ⏳";
+
+      const res = await fetch("/generate_challenges", {
+        method: "POST",
+        body: new URLSearchParams({ goal }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      });
+
+      const data = await res.json();
+      const challenges = data.challenges || [];
+
+      if (!challenges.length) {
+        responseBox.innerText = "❌ No challenges found. Try rephrasing your goal.";
+        return;
+      }
+
+      challengeList.innerHTML = "";
+      challenges.forEach((challenge, i) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "form-check challenge-item";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "form-check-input";
+        checkbox.id = `ch${i}`;
+        checkbox.value = challenge;
+        checkbox.addEventListener("change", limitCheckboxes);
+
+        const label = document.createElement("label");
+        label.className = "form-check-label";
+        label.setAttribute("for", `ch${i}`);
+        label.innerText = challenge;
+
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(label);
+        challengeList.appendChild(wrapper);
+      });
+
+      document.getElementById("challengeSection").style.display = "block";
+      responseBox.style.display = "none";
+    }
+
+    function limitCheckboxes() {
+      const checked = document.querySelectorAll("#challengeList input:checked");
+      if (checked.length > 5) {
+        this.checked = false;
+        alert("⚠️ Please select up to 5 challenges only.");
+      }
+    }
+
+    async function generatePlan() {
+      const selected = Array.from(document.querySelectorAll("#challengeList input:checked"))
+        .map(cb => cb.value.trim());
+
+      if (selected.length === 0) {
+        alert("⚠️ Select at least one challenge.");
+        return;
+      }
+
+      const responseBox = document.getElementById("responseBox");
+      responseBox.style.display = "block";
+      responseBox.innerText = "Generating action plan... ⏳";
+
+      const formBody = new URLSearchParams();
+      selected.forEach(ch => formBody.append("challenges[]", ch));
+
+      const res = await fetch("/generate_plan", {
+        method: "POST",
+        body: formBody,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      });
+
+      const data = await res.json();
+      responseBox.innerText = data.plan || "❌ No plan received.";
+    }
+  </script>
 </body>
 </html>
