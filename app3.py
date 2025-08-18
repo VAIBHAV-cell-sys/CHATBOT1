@@ -19,7 +19,7 @@ def get_router():
         return LLMRouter({
             "provider": "openai",
             "api_key": api_key,
-            "model": "gpt-3.5-turbo"
+            "model": "gpt-4o-mini"
         })
 
     elif model_name == "perplexity":
