@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chatbot AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #chat-container {
+            background-color: #fff;
+            width: 500px;
+            max-width: 90%;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        #chat-box {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .chat-message {
+            margin: 5px 0;
+        }
+        .user-msg {
+            text-align: right;
+            color: blue;
+        }
+        .bot-msg {
+            text-align: left;
+            color: green;
+        }
+        input, select, button {
+            padding: 8px;
+            margin: 5px 0;
+        }
+        #challenges-list {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<div id="chat-container">
+    <h2>Chatbot AI</h2>
+
+    <div>
+        <label for="model">Select Model:</label>
+        <select id="model">
+            
+            <option value="openai">OpenAI</option>
+            
+        <option value="perplexity">Perplexity AI</option>
+        <option value="deepseek">DeepSeek AI</option>
+        <option value="aimlapi">AIMLAPI</option>
+
+        </select>
+        <input type="text" id="api_key" placeholder="Enter API Key if required" />
+        <button id="set-model-btn">Set Model</button>
+    </div>
+
+    <div id="chat-box"></div>
+
+    <input type="text" id="user-input" placeholder="Type your message..." />
+    <button id="send-btn">Send</button>
+    <button id="generate-challenges-btn">Generate Challenges</button>
+    <button id="generate-plan-btn">Generate Action Plan</button>
+
+    <div id="challenges-list"></div>
+</div>
+
+<script>
+    const chatBox = document.getElementById("chat-box");
+    const userInput = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const modelSelect = document.getElementById("model");
+    const apiKeyInput = document.getElementById("api_key");
+    const setModelBtn = document.getElementById("set-model-btn");
+    const generateChallengesBtn = document.getElementById("generate-challenges-btn");
+    const generatePlanBtn = document.getElementById("generate-plan-btn");
+    const challengesListDiv = document.getElementById("challenges-list");
+
+    let challenges = [];
+
+    function appendMessage(message, sender) {
+        const msgDiv = document.createElement("div");
+        msgDiv.classList.add("chat-message", sender === "user" ? "user-msg" : "bot-msg");
+        msgDiv.innerText = message;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    sendBtn.addEventListener("click", async () => {
+        const msg = userInput.value.trim();
+        if (!msg) return;
+        appendMessage(msg, "user");
+        userInput.value = "";
+
+        const res = await fetch("/get", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `msg=${encodeURIComponent(msg)}`
+        });
+        const data = await res.json();
+        appendMessage(data.answer, "bot");
+    });
+
+    setModelBtn.addEventListener("click", async () => {
+        const model = modelSelect.value;
+        const api_key = apiKeyInput.value;
+        await fetch("/set_model", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `model=${encodeURIComponent(model)}&api_key=${encodeURIComponent(api_key)}`
+        });
+        alert("Model updated!");
+    });
+
+    generateChallengesBtn.addEventListener("click", async () => {
+        const goal = userInput.value.trim();
+        if (!goal) return alert("Enter your goal first!");
+
+        const res = await fetch("/generate_challenges", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `goal=${encodeURIComponent(goal)}`
+        });
+        const data = await res.json();
+        challenges = data.challenges;
+        challengesListDiv.innerHTML = "<h4>Challenges:</h4>" + challenges.map(c => `<div>- ${c}</div>`).join("");
+    });
+
+    generatePlanBtn.addEventListener("click", async () => {
+        if (challenges.length === 0) return alert("Generate challenges first!");
+        const formData = new URLSearchParams();
+        challenges.forEach(c => formData.append("challenges[]", c));
+
+        const res = await fetch("/generate_plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: formData.toString()
+        });
+        const data = await res.json();
+        appendMessage(data.plan, "bot");
+    });
+</script>
+</body>
+</html>
