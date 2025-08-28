@@ -356,12 +356,34 @@ def chat():
     user_input = request.form.get("msg")
     router = get_router()
 
+    # Get relevant documents from Pinecone
     context_docs = retriever.get_relevant_documents(user_input)
-    context = "\n\n".join([doc.page_content for doc in context_docs])
-    prompt_full = prompt_template.format(context=context, question=user_input)
 
+    if not context_docs or len(context_docs) == 0:
+        # No relevant content found in Pinecone
+        return jsonify({"answer": "I am sorry, ask Vaibhav Chawla. I am trained only on Atomic Habits content."})
+
+    # Combine retrieved docs as context
+    context = "\n\n".join([doc.page_content for doc in context_docs])
+
+    # Prepare the prompt to the LLM
+    prompt_full = f"""
+You are an assistant trained only on Atomic Habits content.
+Answer the question ONLY using the context below.
+If the answer is not in the context, respond with:
+"I am sorry, ask Vaibhav Chawla. I am trained only on Atomic Habits content."
+
+Context:
+{context}
+
+Question:
+{user_input}
+"""
+
+    # Generate response from AI
     result = router.generate(prompt_full)
     return jsonify({"answer": result})
+
 
 
 if __name__ == "__main__":
