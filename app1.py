@@ -68,22 +68,13 @@ if INDEX_NAME not in pc.list_indexes().names():
     )
 
 # Load PDFs and split into chunks
-documents = load_pdf_file(os.path.join("medibot", "data", "atomic.pdf"))  # ensure atomic.pdf exists in repo
-
- # single file
-text_chunks = text_split(documents, chunk_size=1000, chunk_overlap=150)
-
-# Load embeddings
 embeddings = download_hugging_face_embeddings()
-
-# Create Pinecone vector store
-docsearch = PineconeVectorStore.from_documents(
-    documents=text_chunks,
-    embedding=embeddings,
+docsearch = PineconeVectorStore.from_existing_index(
     index_name=INDEX_NAME,
-    namespace=None,
+    embedding=embeddings
 )
 retriever = docsearch.as_retriever(search_kwargs={"k": 2})
+
 
 # === LLM Router class ===
 import requests
