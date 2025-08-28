@@ -67,7 +67,8 @@ if INDEX_NAME not in pc.list_indexes().names():
     )
 
 # Load PDFs and split into chunks
-documents = load_pdf_file("medibot/data/atomic.pdf")  # single file
+documents = load_pdf_file(os.path.join("medibot", "data", "atomic.pdf"))
+ # single file
 text_chunks = text_split(documents, chunk_size=1000, chunk_overlap=150)
 
 # Load embeddings
