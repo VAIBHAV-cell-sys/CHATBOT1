@@ -6,20 +6,83 @@ import re
 # Load environment variables
 load_dotenv('/Users/wft08/Desktop/CHATBOTAI 2/medibot/.env')
 
-from src.helper import download_hugging_face_embeddings
-from src.prompt import prompt_template
-# from src.llm_router import LLMRouter
-
-from langchain_community.vectorstores import Pinecone as LangchainPinecone
+# LangChain imports
+from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain.prompts import PromptTemplate
 
+# Pinecone imports
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 
+# === Flask app ===
+app = Flask(__name__)
+app.secret_key = "super-secret-key"
+
+# === PDF Loader helper ===
+def load_pdf_file(path):
+    """
+    Automatically detect if path is a single file or directory
+    and load PDFs accordingly.
+    """
+    full_path = os.path.abspath(path)
+
+    if os.path.isfile(full_path):
+        loader = PyPDFLoader(full_path)
+        documents = loader.load()
+    elif os.path.isdir(full_path):
+        loader = DirectoryLoader(full_path, glob="*.pdf", loader_cls=PyPDFLoader)
+        documents = loader.load()
+    else:
+        raise ValueError(f"Invalid path: {full_path}")
+
+    return documents
+
+# === Text splitter helper ===
+def text_split(documents, chunk_size=500, chunk_overlap=20):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap
+    )
+    return text_splitter.split_documents(documents)
+
+# === HuggingFace embeddings helper ===
+def download_hugging_face_embeddings():
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+# === Load documents and create Pinecone index ===
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+INDEX_NAME = "test"
+
+# Initialize Pinecone
+pc = Pinecone(api_key=PINECONE_API_KEY)
+if INDEX_NAME not in pc.list_indexes().names():
+    pc.create_index(
+        name=INDEX_NAME,
+        dimension=384,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+    )
+
+# Load PDFs and split into chunks
+documents = load_pdf_file("medibot/data/atomic.pdf")  # single file
+text_chunks = text_split(documents, chunk_size=1000, chunk_overlap=150)
+
+# Load embeddings
+embeddings = download_hugging_face_embeddings()
+
+# Create Pinecone vector store
+docsearch = PineconeVectorStore.from_documents(
+    documents=text_chunks,
+    embedding=embeddings,
+    index_name=INDEX_NAME,
+    namespace=None,
+)
+retriever = docsearch.as_retriever(search_kwargs={"k": 2})
+
+# === LLM Router class ===
 import requests
 
 class LLMRouter:
@@ -38,15 +101,6 @@ class LLMRouter:
     ]
 
     def __init__(self, config):
-        """
-        config: dict
-
-        provider: "local_llama" | "openai" | "perplexity" | "deepseek"
-        model_path: path to model for local_llama
-        api_key: for openai/perplexity/deepseek
-        model: string model ID (for openai/perplexity/deepseek)
-        params: model params (for local_llama)
-        """
         self.provider = config.get("provider", "local_llama")
         self.config = config
 
@@ -64,22 +118,20 @@ class LLMRouter:
         else:
             return f"[Unsupported provider: {self.provider}]"
 
+    # --- Provider implementations ---
     def _call_openai(self, prompt_or_messages):
         try:
             from openai import OpenAI
-            
             client = OpenAI(api_key=self.config["api_key"])
-
-            if isinstance(prompt_or_messages, str):
-                messages = [{"role": "user", "content": prompt_or_messages}]
-            elif isinstance(prompt_or_messages, list):
-                messages = prompt_or_messages
-            else:
-                return "[Invalid input format for OpenAI]"
-
-            response = client.chat.completions.create(model=self.config.get("model", "gpt-3.5-turbo"),
-            messages=messages,
-            temperature=0.7)
+            messages = (
+                [{"role": "user", "content": prompt_or_messages}]
+                if isinstance(prompt_or_messages, str) else prompt_or_messages
+            )
+            response = client.chat.completions.create(
+                model=self.config.get("model", "gpt-3.5-turbo"),
+                messages=messages,
+                temperature=0.7
+            )
             return response.choices[0].message.content.strip()
         except Exception as e:
             return f"[OpenAI Error] {str(e)}"
@@ -87,18 +139,10 @@ class LLMRouter:
     def _call_local_llama(self, prompt_or_messages):
         try:
             from langchain_community.llms import CTransformers
-
             if isinstance(prompt_or_messages, list):
-                prompt = ""
-                for msg in prompt_or_messages:
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    prompt += f"{role.capitalize()}: {content}\n"
-            elif isinstance(prompt_or_messages, str):
-                prompt = prompt_or_messages
+                prompt = "\n".join(f"{m.get('role', 'user').capitalize()}: {m.get('content', '')}" for m in prompt_or_messages)
             else:
-                return "[Invalid input format for Local LLaMA]"
-
+                prompt = prompt_or_messages
             llm = CTransformers(
                 model=self.config["model_path"],
                 model_type="llama",
@@ -110,142 +154,55 @@ class LLMRouter:
 
     def _call_perplexity(self, prompt_or_messages):
         try:
-            import requests
             api_key = self.config.get("api_key")
             model = self.config.get("model", "claude-3-sonnet-20240229")
-
             if model not in self.SUPPORTED_PERPLEXITY_MODELS:
-                return f"[Perplexity Error] Unsupported model '{model}'. Permitted: {self.SUPPORTED_PERPLEXITY_MODELS}"
-
-            if isinstance(prompt_or_messages, str):
-                messages = [{"role": "user", "content": prompt_or_messages}]
-            elif isinstance(prompt_or_messages, list):
-                messages = prompt_or_messages
-            else:
-                return "[Invalid input format for Perplexity]"
-
+                return f"[Perplexity Error] Unsupported model '{model}'."
+            messages = [{"role": "user", "content": prompt_or_messages}] if isinstance(prompt_or_messages, str) else prompt_or_messages
             response = requests.post(
                 "https://api.perplexity.ai/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "Accept-Charset": "utf-8"
-                },
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": 0.7
-                }
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "temperature": 0.7}
             )
-
             if response.status_code != 200:
                 return f"[Perplexity Error] {response.status_code} - {response.text}"
-
-            data = response.json()
-            return data['choices'][0]['message']['content'].strip()
+            return response.json()['choices'][0]['message']['content'].strip()
         except Exception as e:
             return f"[Perplexity Error] {str(e)}"
 
     def _call_deepseek(self, prompt_or_messages):
         try:
-            import requests
             api_key = self.config.get("api_key")
             model = self.config.get("model", "deepseek-chat")
-
             if model not in self.SUPPORTED_DEEPSEEK_MODELS:
-                return f"[DeepSeek Error] Unsupported model '{model}'. Supported: {self.SUPPORTED_DEEPSEEK_MODELS}"
-
-            if isinstance(prompt_or_messages, str):
-                messages = [{"role": "user", "content": prompt_or_messages}]
-            elif isinstance(prompt_or_messages, list):
-                messages = prompt_or_messages
-            else:
-                return "[Invalid input format for DeepSeek]"
-
+                return f"[DeepSeek Error] Unsupported model '{model}'."
+            messages = [{"role": "user", "content": prompt_or_messages}] if isinstance(prompt_or_messages, str) else prompt_or_messages
             response = requests.post(
                 "https://api.deepseek.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": 0.7
-                }
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "temperature": 0.7}
             )
-
             if response.status_code != 200:
                 return f"[DeepSeek Error] {response.status_code} - {response.text}"
-
-            data = response.json()
-            return data['choices'][0]['message']['content'].strip()
+            return response.json()['choices'][0]['message']['content'].strip()
         except Exception as e:
             return f"[DeepSeek Error] {str(e)}"
-    def _call_aimlapi(self, prompt_or_messages): 
+
+    def _call_aimlapi(self, prompt_or_messages):
         try:
             api_key = self.config.get("api_key")
             model = self.config.get("model", "gpt-4o")
-
-            if isinstance(prompt_or_messages, str):
-                messages = [{"role": "user", "content": prompt_or_messages}]
-            elif isinstance(prompt_or_messages, list):
-                messages = prompt_or_messages
-            else:
-                return "[Invalid input format for AIML API]"
-
+            messages = [{"role": "user", "content": prompt_or_messages}] if isinstance(prompt_or_messages, str) else prompt_or_messages
             response = requests.post(
                 "https://api.aimlapi.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 256
-                }
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 256}
             )
-
             if response.status_code != 200:
                 return f"[AIML API Error] {response.status_code} - {response.text}"
-
-            data = response.json()
-            return data['choices'][0]['message']['content'].strip()
+            return response.json()['choices'][0]['message']['content'].strip()
         except Exception as e:
             return f"[AIML API Error] {str(e)}"
-app = Flask(__name__)
-app.secret_key = "super-secret-key"
-
-# === Pinecone setup ===
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-INDEX_NAME = "test"
-
-pc = Pinecone(api_key=PINECONE_API_KEY)
-if INDEX_NAME not in pc.list_indexes().names():
-    pc.create_index(
-        name=INDEX_NAME,
-        dimension=384,
-        metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
-    )
-
-# === Load documents ===
-loader = PyPDFLoader("/Users/wft08/Desktop/CHATBOTAI 2/Data/foursight.pdf")
-documents = loader.load()
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-text_chunks = text_splitter.split_documents(documents)
-embeddings = download_hugging_face_embeddings()
-
-docsearch = PineconeVectorStore.from_documents(
-    documents=text_chunks,
-    embedding=embeddings,
-    index_name=INDEX_NAME,
-    namespace=None,
-)
-retriever = docsearch.as_retriever(search_kwargs={"k": 2})
-prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
 
 # === Helper: Get LLM Router ===
 def get_router():
@@ -270,11 +227,10 @@ def get_router():
             }
         })
 
-# === Routes ===
+# === Flask routes ===
 @app.route("/")
 def index():
     return render_template("chat1.html")
-
 
 @app.route("/set_model", methods=["POST"])
 def set_model():
@@ -284,93 +240,45 @@ def set_model():
     session["api_key"] = api_key
     return jsonify({"status": "Model updated"})
 
-
-
 @app.route("/generate_challenges", methods=["POST"])
 def generate_challenges():
     goal = request.form.get("goal", "")
     router = get_router()
-
     context_docs = retriever.get_relevant_documents(goal)
     context = "\n\n".join([doc.page_content for doc in context_docs])
-
     messages = [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant that identifies potential blockers and challenges based on a user's goal."
-        },
-        {
-            "role": "user",
-            "content": f"""Goal: {goal}
-
-Using the context below, generate a numbered list of 8–10 realistic challenges or obstacles someone might face. Be specific. Don't explain.
-
-Context:
-{context}
-
-Output only the list in this format:
-1. ...
-2. ...
-"""
-        }
+        {"role": "system", "content": "You are a helpful assistant that identifies potential blockers and challenges based on a user's goal."},
+        {"role": "user", "content": f"Goal: {goal}\n\nContext:\n{context}\n\nOutput only a numbered list of 8–10 challenges."}
     ]
-
     result = router.generate(messages)
-
-    # TEMP: log to console for debugging
-    print("=== LLM Response ===")
-    print(result)
-
-    if not result or not isinstance(result, str):
-        return jsonify({"challenges": []})
-
-    # Clean and split into numbered items
     lines = result.splitlines()
     challenges = [re.sub(r'^[0-9.\-)\s]+', '', line.strip()) for line in lines if line.strip()]
-
     return jsonify({"challenges": challenges})
-
 
 @app.route("/generate_plan", methods=["POST"])
 def generate_plan():
     challenges = request.form.getlist("challenges[]")
     router = get_router()
-
     formatted = "\n".join(f"- {c}" for c in challenges if c.strip())
     messages = [
-        {
-            "role": "system",
-            "content": "You are an expert in strategic planning and implementation."
-        },
-        {
-            "role": "user",
-            "content": f"""Given these selected challenges:\n\n{formatted}\n\nCreate a step-by-step action plan including short-term, mid-term, and long-term tasks. Be specific about what, who, and when.Complete this under 300 tokens only."""
-        }
+        {"role": "system", "content": "You are an expert in strategic planning."},
+        {"role": "user", "content": f"Given these selected challenges:\n{formatted}\nCreate a step-by-step action plan under 300 tokens."}
     ]
     plan = router.generate(messages)
     return jsonify({"plan": plan})
-
 
 @app.route("/get", methods=["POST"])
 def chat():
     user_input = request.form.get("msg")
     router = get_router()
-
-    # Get relevant documents from Pinecone
     context_docs = retriever.get_relevant_documents(user_input)
-
-    if not context_docs or len(context_docs) == 0:
-        # No relevant content found in Pinecone
+    if not context_docs:
         return jsonify({"answer": "I am sorry, ask Vaibhav Chawla. I am trained only on Atomic Habits content."})
-
-    # Combine retrieved docs as context
     context = "\n\n".join([doc.page_content for doc in context_docs])
-
-    # Prepare the prompt to the LLM
     prompt_full = f"""
 You are an assistant trained only on Atomic Habits content.
-Answer the question ONLY using the context below.
-If the answer is not in the context, respond with:
+Answer ONLY using the context below.
+If not in context, respond:
 "I am sorry, ask Vaibhav Chawla. I am trained only on Atomic Habits content."
 
 Context:
@@ -379,12 +287,8 @@ Context:
 Question:
 {user_input}
 """
-
-    # Generate response from AI
     result = router.generate(prompt_full)
     return jsonify({"answer": result})
-
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
