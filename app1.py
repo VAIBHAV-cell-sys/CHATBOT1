@@ -4,7 +4,7 @@ import os
 import re
 
 # Load environment variables
-load_dotenv('/Users/wft08/Desktop/CHATBOTAI 2/medibot/.env')
+load_dotenv()
 
 # LangChain imports
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
@@ -19,7 +19,8 @@ from langchain_pinecone import PineconeVectorStore
 
 # === Flask app ===
 app = Flask(__name__)
-app.secret_key = "super-secret-key"
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
+
 
 # === PDF Loader helper ===
 def load_pdf_file(path):
@@ -67,7 +68,8 @@ if INDEX_NAME not in pc.list_indexes().names():
     )
 
 # Load PDFs and split into chunks
-documents = load_pdf_file(os.path.join("medibot", "data", "atomic.pdf"))
+documents = load_pdf_file(os.path.join("medibot", "data", "atomic.pdf"))  # ensure atomic.pdf exists in repo
+
  # single file
 text_chunks = text_split(documents, chunk_size=1000, chunk_overlap=150)
 
@@ -102,14 +104,14 @@ class LLMRouter:
     ]
 
     def __init__(self, config):
-        self.provider = config.get("provider", "local_llama")
+        self.provider = config.get("provider", "openai")
         self.config = config
 
     def generate(self, prompt_or_messages):
         if self.provider == "openai":
             return self._call_openai(prompt_or_messages)
-        elif self.provider == "local_llama":
-            return self._call_local_llama(prompt_or_messages)
+        # elif self.provider == "local_llama":
+        #     return self._call_local_llama(prompt_or_messages)
         elif self.provider == "perplexity":
             return self._call_perplexity(prompt_or_messages)
         elif self.provider == "deepseek":
@@ -137,21 +139,7 @@ class LLMRouter:
         except Exception as e:
             return f"[OpenAI Error] {str(e)}"
 
-    def _call_local_llama(self, prompt_or_messages):
-        try:
-            from langchain_community.llms import CTransformers
-            if isinstance(prompt_or_messages, list):
-                prompt = "\n".join(f"{m.get('role', 'user').capitalize()}: {m.get('content', '')}" for m in prompt_or_messages)
-            else:
-                prompt = prompt_or_messages
-            llm = CTransformers(
-                model=self.config["model_path"],
-                model_type="llama",
-                config=self.config.get("params", {})
-            )
-            return llm(prompt)
-        except Exception as e:
-            return f"[Local LLaMA Error] {str(e)}"
+    
 
     def _call_perplexity(self, prompt_or_messages):
         try:
@@ -207,26 +195,42 @@ class LLMRouter:
 
 # === Helper: Get LLM Router ===
 def get_router():
-    model_name = session.get("llm_name", "local_llama")
+    model_name = session.get("llm_name", "openai") #default to local llama
     api_key = session.get("api_key")
+
     if model_name == "openai":
         return LLMRouter({
             "provider": "openai",
             "api_key": api_key,
-            "model": "gpt-3.5-turbo"
+            "model": "gpt-4o-mini"
         })
-    else:
+
+    elif model_name == "perplexity":
         return LLMRouter({
-            "provider": "local_llama",
-            "model_path": "/Users/wft08/Desktop/CHATBOTAI 2/medibot/research/model/llama-2-7b-chat.ggmlv3.q4_0.bin",
-            "params": {
-                "max_new_tokens": 300,
-                "temperature": 0.3,
-                "threads": 4,
-                "batch_size": 8,
-                "context_length": 2048
-            }
+            "provider": "perplexity",
+            "api_key": api_key,
+            "model": "sonar-small-online"
         })
+
+    elif model_name == "deepseek":
+        return LLMRouter({
+            "provider": "deepseek",
+            "api_key": api_key,
+            "model": "deepseek-chat"
+        })
+    elif model_name == "aimlapi":
+        return LLMRouter({
+        "provider": "aimlapi",
+        "api_key": api_key,
+        "model": "gpt-4o"
+    })
+
+    return LLMRouter({
+            "provider": "openai",
+            "api_key": api_key,
+            "model": "gpt-4o-mini"
+        })
+        
 
 # === Flask routes ===
 @app.route("/")
@@ -292,4 +296,6 @@ Question:
     return jsonify({"answer": result})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
+
