@@ -8,11 +8,11 @@ load_dotenv()
 
 # LangChain imports
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
-from langchain_community.embeddings import HuggingFaceEmbeddings
+
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-
+from langchain_huggingface import HuggingFaceEmbeddings
 # Pinecone imports
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
