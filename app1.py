@@ -168,19 +168,44 @@ class LLMRouter:
         except Exception as e:
             return f"[DeepSeek Error] {str(e)}"
 
-    def _call_aimlapi(self, prompt_or_messages):
+    def _call_aimlapi(self, prompt_or_messages): 
         try:
             api_key = self.config.get("api_key")
-            model = self.config.get("model", "gpt-4o")
-            messages = [{"role": "user", "content": prompt_or_messages}] if isinstance(prompt_or_messages, str) else prompt_or_messages
+            model = self.config.get("model", "google/gemma-3n-e4b-it")
+
+            if isinstance(prompt_or_messages, str):
+                messages = [{"role": "user", "content": prompt_or_messages}]
+            elif isinstance(prompt_or_messages, list):
+                valid_roles = {"user", "assistant"}
+                messages = []
+                for msg in prompt_or_messages:
+                    role = msg.get("role")
+                    content = msg.get("content")
+                    if role not in valid_roles:
+                        role = "user"  # fallback, since AIML only accepts user/assistant
+                    messages.append({"role": role, "content": content})
+            else:
+                return "[Invalid input format for AIML API]"
+
             response = requests.post(
                 "https://api.aimlapi.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 256}
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 256
+                }
             )
+
             if response.status_code != 200:
                 return f"[AIML API Error] {response.status_code} - {response.text}"
-            return response.json()['choices'][0]['message']['content'].strip()
+
+            data = response.json()
+            return data['choices'][0]['message']['content'].strip()
         except Exception as e:
             return f"[AIML API Error] {str(e)}"
 
@@ -211,10 +236,10 @@ def get_router():
         })
     elif model_name == "aimlapi":
         return LLMRouter({
-        "provider": "aimlapi",
-        "api_key": api_key,
-        "model": "gpt-4o"
-    })
+            "provider": "aimlapi",
+            "api_key": api_key,
+            "model": "google/gemma-3n-e4b-it"
+        })
 
     return LLMRouter({
             "provider": "openai",
