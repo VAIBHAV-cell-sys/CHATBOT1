@@ -1,0 +1,78 @@
+ye graphviz pr h available
+
+digraph RAG_Chatbot {
+
+    rankdir=LR;
+    node [shape=box, style=filled, color=lightblue];
+
+    UserInput [label="User Inputs Query"];
+    RetrieveContext [label="Retrieve Context\nfrom Pinecone Vector Store?"];
+    HasDocs [label="Relevant Documents Found?"];
+    BuildPrompt [label="Build Prompt with\nContext + Query (RAG)"];
+    NoDocs [label="No Relevant Docs\nFound"];
+    DirectLLM [label="Send Query Directly\nto LLM (No Context)"];
+    SelectLLM [label="Dynamic LLM\nProvider Selection"];
+    OpenAI [label="OpenAI"];
+    Perplexity [label="Perplexity AI"];
+    DeepSeek [label="DeepSeek AI"];
+    AIMLAPI [label="AIMLAPI"];
+    ReceiveResponse [label="Receive Response from LLM"];
+    DisplayResponse [label="Display Response to User"];
+    ChangeModel [label="User Changes Model or API Key?"];
+    UpdateSession [label="Update Session with\nSelected Model and API Key"];
+
+    UserInput -> RetrieveContext;
+    RetrieveContext -> HasDocs;
+    HasDocs -> BuildPrompt [label="Yes"];
+    HasDocs -> NoDocs [label="No"];
+    BuildPrompt -> SelectLLM;
+    NoDocs -> DirectLLM;
+    DirectLLM -> SelectLLM;
+    SelectLLM -> OpenAI;
+    SelectLLM -> Perplexity;
+    SelectLLM -> DeepSeek;
+    SelectLLM -> AIMLAPI;
+    OpenAI -> ReceiveResponse;
+    Perplexity -> ReceiveResponse;
+    DeepSeek -> ReceiveResponse;
+    AIMLAPI -> ReceiveResponse;
+    ReceiveResponse -> DisplayResponse;
+    DisplayResponse -> ChangeModel;
+    ChangeModel -> UpdateSession [label="Yes"];
+    UpdateSession -> SelectLLM;
+    ChangeModel -> UserInput [label="No"];
+}
+mermaid vala :
+https://www.eraser.io/ai/mermaid-diagram-editor
+
+    A[User Inputs Query] --> B{Retrieve Context from Pinecone?}
+    
+    B -- Yes --> C[Get Relevant Docs]
+    C --> D[Build Prompt with Context + Query (RAG)]
+    D --> E{Selected LLM Provider}
+    
+    B -- No --> F[No Relevant Docs Found]
+    F --> G[Send Query Directly to LLM]
+    G --> E
+    
+    subgraph LLM Providers
+        E --> H[OpenAI]
+        E --> I[Perplexity AI]
+        E --> J[DeepSeek AI]
+        E --> K[AIMLAPI]
+    end
+    
+    H --> L[Receive LLM Response]
+    I --> L
+    J --> L
+    K --> L
+    
+    L --> M[Display Response to User]
+
+    %% Additional details on session/model handling
+    M --> N{Change Model?}
+    N -- Yes --> O[User Selects Model + API Key]
+    O --> P[Update Session with Model & API Key]
+    P --> E
+
+    N -- No --> A
